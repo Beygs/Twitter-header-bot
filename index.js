@@ -235,6 +235,6 @@ async function delete_files(files) {
 
 get_followers();
 
-// setInterval(() => {
-//   get_followers();
-// }, 60000);
+setInterval(() => {
+  get_followers();
+}, 60000);
