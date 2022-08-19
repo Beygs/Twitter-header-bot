@@ -1,9 +1,7 @@
-
-
 const dotenv = require("dotenv");
 dotenv.config();
 const { TwitterClient } = require("twitter-api-client");
-const axios = require("axios");
+const axios = require("axios").default;
 const sharp = require("sharp");
 const fs = require("fs");
 // to bypass heroku port issue
@@ -82,6 +80,32 @@ const getFollowersProgress = (followersCount) => {
   return `${abbreviateInt(prev)} ${cubes} ${abbreviateInt(next)} followers`;
 }
 
+const getSunriseSunset = async () => {
+  const raw = fs.readFileSync("./data/sunrise-sunset.json");
+  const data = JSON.parse(raw);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (new Date(data.lastUpdated) >= today) return data;
+
+  try {
+    const response = await axios.get("http://api.sunrise-sunset.org/json?lat=48.85928539296423&lng=2.294161867963804&formatted=0");
+    const newData = response.data.results;
+    const dataFormatted = {
+      sunrise: newData.sunrise,
+      sunset: newData.sunset,
+      lastUpdated: new Date(),
+    };
+
+    fs.writeFileSync("./data/sunrise-sunset.json", JSON.stringify(dataFormatted));
+
+    return dataFormatted;
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 async function get_followers() {
 
   /*---------------UPDATE LOCATION PROFIL---------------------*/
@@ -114,12 +138,12 @@ async function get_followers() {
     followers.users.forEach((follower, index, arr) => {
       process_image(
         follower.profile_image_url_https,
-        `${follower.screen_name}.png`
+        `./processed/${follower.screen_name}.png`
       ).then(() => {
         const follower_avatar = {
-          input: `${follower.screen_name}.png`,
-          top: parseInt(`${380 + 300 * index}`),
-          left: 3950,
+          input: `./processed/${follower.screen_name}.png`,
+          top: parseInt(`${300 + 300 * index}`),
+          left: 4200,
         };
         image_data.push(follower_avatar);
         count++;
@@ -161,11 +185,16 @@ async function process_image(url, image_path) {
 
 
 async function draw_image(image_data) {
+  const { sunrise, sunset } = await getSunriseSunset();
+  const now = new Date().getHours();
+
+  const theme = now < new Date(sunrise).getHours() || now > new Date(sunset).getHours() ? "night" : "day";
+
   try {
 
-    await sharp("twitter-banner.png")
+    await sharp(`./images/${theme}.png`)
       .composite(image_data)
-      .toFile("new-twitter-banner.png");
+      .toFile("./processed/new-twitter-banner.png");
 
     upload_banner(image_data);
   } catch (error) {
@@ -175,7 +204,7 @@ async function draw_image(image_data) {
 
 async function upload_banner(files) {
   try {
-    const base64 = fs.readFileSync("new-twitter-banner.png", {
+    const base64 = fs.readFileSync("./processed/new-twitter-banner.png", {
       encoding: "base64",
     });
     await twitterClient.accountsAndUsers
@@ -206,6 +235,6 @@ async function delete_files(files) {
 
 get_followers();
 
-setInterval(() => {
-  get_followers();
-}, 60000);
+// setInterval(() => {
+//   get_followers();
+// }, 60000);
