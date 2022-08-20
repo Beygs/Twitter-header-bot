@@ -138,9 +138,9 @@ async function get_followers() {
 
     const location = getFollowersProgress(follower.followers_count);
 
-    // const update = await twitterClient.accountsAndUsers.accountUpdateProfile({
-    //   location,
-    // });
+    const update = await twitterClient.accountsAndUsers.accountUpdateProfile({
+      location,
+    });
 
     const population = getPopulation();
     const city = population.data[Math.floor(Math.random() * population.data.length)];
@@ -246,7 +246,9 @@ async function draw_image(image_data) {
       .composite(image_data)
       .toFile("./processed/new-twitter-banner.png");
 
-    // upload_banner(image_data);
+    console.log("New banner created!");
+
+    upload_banner(image_data);
   } catch (error) {
     console.log(error);
   }
