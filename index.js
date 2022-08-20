@@ -144,7 +144,7 @@ async function get_followers() {
 
     const population = getPopulation();
     const city = population.data[Math.floor(Math.random() * population.data.length)];
-    const mult = (city["Population totale"] / follower.followers_count).toFixed(2);
+    const mult = (follower.followers_count / city["Population totale"]).toFixed(2);
 
     const svgText = /* html */ `
     <svg width="3000" height="500">
