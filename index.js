@@ -6,6 +6,7 @@ const sharp = require("sharp");
 const fs = require("fs");
 // to bypass heroku port issue
 const http = require("http");
+const Papa = require("papaparse");
 
 const twitterClient = new TwitterClient({
   apiKey: process.env.API_KEY,
@@ -41,10 +42,12 @@ const previousCheckpoint = (int) => {
   if (int < 1000) return Math.floor(int / 100) * 100;
 
   const numOfDigits = int.toString().length;
-  const num = Math.floor(int / Math.pow(10, numOfDigits - (numOfDigits % 3 || 3)));
+  const num = Math.floor(
+    int / Math.pow(10, numOfDigits - (numOfDigits % 3 || 3))
+  );
 
   return num * Math.pow(10, numOfDigits - num.toString().length);
-}
+};
 
 /**
  * Get next checkpoint from a number (for example: 120 => 200, 12732 => 13000)
@@ -58,26 +61,39 @@ const nextCheckpoint = (int) => {
   if (int < 1000) return (Math.floor(int / 100) + 1) * 100;
 
   const numOfDigits = int.toString().length;
-  const num = Math.floor(int / Math.pow(10, numOfDigits - (numOfDigits % 3 || 3)));
+  const num = Math.floor(
+    int / Math.pow(10, numOfDigits - (numOfDigits % 3 || 3))
+  );
 
   return (num + 1) * Math.pow(10, numOfDigits - num.toString().length);
-}
+};
 
 /**
  * Get followers progress bar
- * @param {number} followersCount 
+ * @param {number} followersCount
  * @returns {string}
  */
 
 const getFollowersProgress = (followersCount) => {
   const prev = previousCheckpoint(followersCount);
   const next = nextCheckpoint(followersCount);
-  
-  const greenCubes = "🟩".repeat(Math.floor((followersCount - prev) / ((next - prev) / 5)));
-  const yellowCube = (followersCount - prev) / ((next - prev) / 5) % 1 !== 0 ? "🟨" : "";
+
+  const greenCubes = "🟩".repeat(
+    Math.floor((followersCount - prev) / ((next - prev) / 5))
+  );
+  const yellowCube =
+    ((followersCount - prev) / ((next - prev) / 5)) % 1 !== 0 ? "🟨" : "";
   const cubes = (greenCubes + yellowCube).padEnd(10, "⬜️");
-  
+
   return `${abbreviateInt(prev)} ${cubes} ${abbreviateInt(next)} followers`;
+};
+
+const getPopulation = () => {
+  const data = fs.readFileSync("./data/population.csv").toString();
+  const parsed = Papa.parse(data, {
+    header: true,
+  });
+  return parsed;
 }
 
 const getSunriseSunset = async () => {
@@ -90,7 +106,9 @@ const getSunriseSunset = async () => {
   if (new Date(data.lastUpdated) >= today) return data;
 
   try {
-    const response = await axios.get("http://api.sunrise-sunset.org/json?lat=48.85928539296423&lng=2.294161867963804&formatted=0");
+    const response = await axios.get(
+      "http://api.sunrise-sunset.org/json?lat=48.85928539296423&lng=2.294161867963804&formatted=0"
+    );
     const newData = response.data.results;
     const dataFormatted = {
       sunrise: newData.sunrise,
@@ -98,40 +116,71 @@ const getSunriseSunset = async () => {
       lastUpdated: new Date(),
     };
 
-    fs.writeFileSync("./data/sunrise-sunset.json", JSON.stringify(dataFormatted));
+    fs.writeFileSync(
+      "./data/sunrise-sunset.json",
+      JSON.stringify(dataFormatted)
+    );
 
     return dataFormatted;
   } catch (err) {
     console.error(err);
   }
-}
+};
 
 async function get_followers() {
-
   /*---------------UPDATE LOCATION PROFIL---------------------*/
+  const image_data = [];
 
   try {
     const follower = await twitterClient.accountsAndUsers.usersShow({
-      screen_name: process.env.SCREEN_NAME
+      screen_name: process.env.SCREEN_NAME,
     });
 
     const location = getFollowersProgress(follower.followers_count);
 
-    const update = await twitterClient.accountsAndUsers.accountUpdateProfile({
-      location,
-    });
+    // const update = await twitterClient.accountsAndUsers.accountUpdateProfile({
+    //   location,
+    // });
+
+    const population = getPopulation();
+    const city = population.data[Math.floor(Math.random() * population.data.length)];
+    const mult = (city["Population totale"] / follower.followers_count).toFixed(2);
+
+    const svgText = /* html */ `
+    <svg width="3000" height="500">
+      <style>
+        .txt {
+          fill: #001;
+          font-size: 70px;
+          font-weight: bold;
+          font-family: sans-serif;
+        }
+      </style>
+      <text x="0" y="25%" class="txt">
+        Vous êtes ${follower.followers_count} Followers
+      </text>
+      <text x="0" y="50%" class="txt">
+        C'est ${mult}x la population de ${city["Nom de la commune"]} (${city["Code département"]})
+      </text>
+    </svg>
+  `;
+
+  const svgBuffer = Buffer.from(svgText);
+
+  image_data.push({
+    input: svgBuffer,
+    top: 0,
+    left: 100
+  });
   } catch (err) {
     console.error(err);
   }
 
-
-
-/*---------------UPDATE PROFIL PICTURE---------------------*/
+  /*---------------UPDATE PROFIL PICTURE---------------------*/
   const followers = await twitterClient.accountsAndUsers.followersList({
     count: 3,
   });
 
-  const image_data = [];
   let count = 0;
 
   const get_followers_img = new Promise((resolve, reject) => {
@@ -183,20 +232,21 @@ async function process_image(url, image_path) {
   );
 }
 
-
 async function draw_image(image_data) {
   const { sunrise, sunset } = await getSunriseSunset();
   const now = new Date().getHours();
 
-  const theme = now < new Date(sunrise).getHours() || now > new Date(sunset).getHours() ? "night" : "day";
+  const theme =
+    now < new Date(sunrise).getHours() || now > new Date(sunset).getHours()
+      ? "night"
+      : "day";
 
   try {
-
     await sharp(`./images/${theme}.png`)
       .composite(image_data)
       .toFile("./processed/new-twitter-banner.png");
 
-    upload_banner(image_data);
+    // upload_banner(image_data);
   } catch (error) {
     console.log(error);
   }
